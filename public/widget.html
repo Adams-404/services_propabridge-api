@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Propa Chat Widget</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --navy: #0a1628;
+            --amber: #f5a623;
+            --gray: #f4f5f7;
+            --gray2: #e8eaed;
+            --gray3: #9aa3b2;
+            --text: #1a2336;
+            --verified: #1a73e8;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            font-family: 'Inter', sans-serif;
+            background: transparent;
+            overflow: hidden;
+        }
+
+        /* ─── Floating bubble (collapsed) ─── */
+        #chatBubble {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 60px;
+            height: 60px;
+            background: var(--navy);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            cursor: pointer;
+            box-shadow: 0 4px 20px rgba(10, 22, 40, 0.35);
+            transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 9999;
+        }
+
+        #chatBubble:hover {
+            transform: scale(1.08);
+            box-shadow: 0 6px 28px rgba(10, 22, 40, 0.4);
+        }
+
+        #chatBubble.open {
+            transform: scale(0.8);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .bubble-badge {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 18px;
+            height: 18px;
+            background: var(--amber);
+            border-radius: 50%;
+            border: 2px solid white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--navy);
+            animation: pop 0.3s ease;
+        }
+
+        @keyframes pop {
+            0% {
+                transform: scale(0);
+            }
+
+            100% {
+                transform: scale(1);
+            }
+        }
+
+        /* ─── Chat panel ─── */
+        #chatPanel {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 380px;
+            height: 580px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 8px 40px rgba(10, 22, 40, 0.25);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            z-index: 9998;
+            transform: scale(0.8) translateY(30px);
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.3s cubic-bezier(0.34, 1.25, 0.64, 1);
+            transform-origin: bottom right;
+        }
+
+        #chatPanel.open {
+            transform: scale(1) translateY(0);
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        /* Header */
+        .chat-header {
+            background: var(--navy);
+            padding: 14px 16px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .chat-header-avatar {
+            width: 36px;
+            height: 36px;
+            background: linear-gradient(135deg, #f5a623, #e8941a);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .chat-header-info {
+            flex: 1;
+        }
+
+        .chat-header-name {
+            font-size: 14px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .chat-header-sub {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.5);
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 1px;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            background: #4ade80;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        .header-close {
+            width: 30px;
+            height: 30px;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            border-radius: 50%;
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            font-size: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+
+        .header-close:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Messages */
+        .chat-msgs {
+            flex: 1;
+            overflow-y: auto;
+            padding: 14px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            background: #f8f9fb;
+            scroll-behavior: smooth;
+        }
+
+        .chat-msgs::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .chat-msgs::-webkit-scrollbar-thumb {
+            background: var(--gray2);
+            border-radius: 3px;
+        }
+
+        .welcome {
+            background: linear-gradient(135deg, var(--navy), #0f2044);
+            border-radius: 14px;
+            padding: 16px;
+            text-align: center;
+        }
+
+        .welcome-icon {
+            font-size: 24px;
+            margin-bottom: 6px;
+        }
+
+        .welcome h3 {
+            font-size: 14px;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 4px;
+        }
+
+        .welcome p {
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.55);
+            line-height: 1.5;
+        }
+
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .chip {
+            background: white;
+            border: 1px solid var(--gray2);
+            border-radius: 100px;
+            padding: 5px 11px;
+            font-size: 11px;
+            font-weight: 500;
+            color: var(--navy);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .chip:hover {
+            background: var(--navy);
+            border-color: var(--navy);
+            color: white;
+        }
+
+        .msg-row {
+            display: flex;
+            gap: 6px;
+            align-items: flex-end;
+        }
+
+        .msg-row.user {
+            flex-direction: row-reverse;
+        }
+
+        .msg-av {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            flex-shrink: 0;
+        }
+
+        .msg-av.propa {
+            background: linear-gradient(135deg, #f5a623, #e8941a);
+            font-size: 12px;
+        }
+
+        .msg-av.user-av {
+            background: var(--navy);
+            color: rgba(255, 255, 255, 0.8);
+            font-weight: 600;
+        }
+
+        .msg-bub {
+            max-width: 80%;
+            padding: 9px 12px;
+            border-radius: 14px;
+            font-size: 12.5px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .msg-bub.propa {
+            background: white;
+            color: var(--text);
+            border-radius: 3px 14px 14px 14px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+        }
+
+        .msg-bub.user {
+            background: var(--navy);
+            color: white;
+            border-radius: 14px 3px 14px 14px;
+        }
+
+        /* Property card */
+        .prop-card {
+            background: white;
+            border: 1px solid var(--gray2);
+            border-radius: 10px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+        }
+
+        .prop-card:hover {
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+            transform: translateY(-2px);
+        }
+
+        .prop-img {
+            height: 90px;
+            background: var(--gray);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            color: var(--gray3);
+            overflow: hidden;
+        }
+
+        .prop-img img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .prop-body {
+            padding: 10px;
+        }
+
+        .prop-price {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--navy);
+        }
+
+        .prop-title {
+            font-size: 11px;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin: 2px 0 6px;
+        }
+
+        .prop-meta {
+            display: flex;
+            gap: 8px;
+            font-size: 10px;
+            color: var(--gray3);
+        }
+
+        .prop-verified {
+            float: right;
+            background: #e8f0fe;
+            color: #1a73e8;
+            border-radius: 100px;
+            padding: 1px 6px;
+            font-size: 9px;
+            font-weight: 600;
+        }
+
+        /* Typing */
+        .typing-row {
+            display: flex;
+            gap: 6px;
+            align-items: flex-end;
+        }
+
+        .typing-dots {
+            background: white;
+            border-radius: 14px;
+            padding: 9px 14px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.07);
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .t-dot {
+            width: 5px;
+            height: 5px;
+            background: var(--gray3);
+            border-radius: 50%;
+            animation: bounce 1.4s ease-in-out infinite;
+        }
+
+        .t-dot:nth-child(2) {
+            animation-delay: 0.16s;
+        }
+
+        .t-dot:nth-child(3) {
+            animation-delay: 0.32s;
+        }
+
+        @keyframes bounce {
+
+            0%,
+            60%,
+            100% {
+                transform: translateY(0);
+            }
+
+            30% {
+                transform: translateY(-5px);
+            }
+        }
+
+        /* Input */
+        .chat-input-area {
+            padding: 10px 12px;
+            background: white;
+            border-top: 1px solid var(--gray2);
+        }
+
+        .input-row {
+            display: flex;
+            gap: 6px;
+            align-items: flex-end;
+        }
+
+        .chat-input {
+            flex: 1;
+            background: var(--gray);
+            border: 1.5px solid transparent;
+            border-radius: 10px;
+            padding: 8px 12px;
+            font-size: 12.5px;
+            font-family: 'Inter', sans-serif;
+            color: var(--text);
+            resize: none;
+            max-height: 100px;
+            min-height: 36px;
+            transition: border-color 0.2s;
+            line-height: 1.4;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: var(--amber);
+            background: white;
+        }
+
+        .chat-input::placeholder {
+            color: var(--gray3);
+        }
+
+        .send-btn {
+            width: 36px;
+            height: 36px;
+            background: var(--navy);
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .send-btn:hover {
+            background: var(--amber);
+        }
+
+        .send-btn svg {
+            width: 16px;
+            height: 16px;
+            fill: white;
+        }
+
+        .chat-footer {
+            padding: 6px;
+            text-align: center;
+            font-size: 10px;
+            color: var(--gray3);
+            background: white;
+        }
+
+        .chat-footer a {
+            color: var(--navy);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        @media (max-width: 460px) {
+            #chatPanel {
+                width: calc(100vw - 28px);
+                right: 14px;
+                bottom: 14px;
+            }
+
+            #chatBubble {
+                right: 14px;
+                bottom: 14px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Floating bubble -->
+    <div id="chatBubble" onclick="toggleChat()">
+        🏠
+        <div class="bubble-badge">1</div>
+    </div>
+
+    <!-- Chat panel -->
+    <div id="chatPanel">
+        <div class="chat-header">
+            <div class="chat-header-avatar">🏠</div>
+            <div class="chat-header-info">
+                <div class="chat-header-name">Propa</div>
+                <div class="chat-header-sub">
+                    <span class="status-dot"></span>
+                    AI Property Concierge
+                </div>
+            </div>
+            <button class="header-close" onclick="toggleChat()">✕</button>
+        </div>
+
+        <div class="chat-msgs" id="chatMsgs">
+            <div class="welcome">
+                <div class="welcome-icon">🏡</div>
+                <h3>Hi! I'm Propa</h3>
+                <p>Find your perfect verified home in Abuja. Ask me anything!</p>
+            </div>
+            <div class="chips" id="chips">
+                <button class="chip" onclick="quickSend(this)">3-bed flat, Gwarinpa ₦2.5M</button>
+                <button class="chip" onclick="quickSend(this)">Buy in Jabi under ₦150M</button>
+                <button class="chip" onclick="quickSend(this)">Luxury Maitama apartment</button>
+                <button class="chip" onclick="quickSend(this)">Cheap 2-bed Kubwa</button>
+            </div>
+        </div>
+
+        <div class="chat-input-area">
+            <div class="input-row">
+                <textarea class="chat-input" id="chatInput" placeholder="Ask about properties..." rows="1"
+                    onkeydown="handleKey(event)" oninput="autoR(this)"></textarea>
+                <button class="send-btn" id="sendBtn" onclick="send()">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="chat-footer">Powered by <a href="https://propabridge.com" target="_blank">Propabridge</a></div>
+    </div>
+
+    <script>
+        // ── Config: pull from URL params so Framer can pass the API URL
+        const params = new URLSearchParams(window.location.search);
+        const API = (params.get('api') || 'https://propabridge-api-480235407496.us-central1.run.app').replace(/\/$/, '');
+
+        let open = false;
+        let sessionId = null;
+        let loading = false;
+
+        function toggleChat() {
+            open = !open;
+            document.getElementById('chatPanel').classList.toggle('open', open);
+            document.getElementById('chatBubble').classList.toggle('open', open);
+            if (open) {
+                document.querySelector('.bubble-badge')?.remove();
+                document.getElementById('chatInput').focus();
+            }
+            // Notify parent Framer frame if embedded
+            try { window.parent.postMessage({ type: 'propa-chat-toggle', open }, '*'); } catch { }
+        }
+
+        function autoR(el) {
+            el.style.height = 'auto';
+            el.style.height = Math.min(el.scrollHeight, 100) + 'px';
+        }
+
+        function handleKey(e) {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+        }
+
+        function scroll() {
+            const m = document.getElementById('chatMsgs');
+            m.scrollTop = m.scrollHeight;
+        }
+
+        function quickSend(btn) {
+            document.getElementById('chatInput').value = btn.textContent;
+            send();
+        }
+
+        function hideChips() {
+            const c = document.getElementById('chips');
+            if (c) c.style.display = 'none';
+        }
+
+        function addMsg(role, text, props) {
+            hideChips();
+            const msgs = document.getElementById('chatMsgs');
+            const row = document.createElement('div');
+            row.className = `msg-row ${role}`;
+
+            // Avatar
+            const av = document.createElement('div');
+            av.className = `msg-av ${role === 'propa' ? 'propa' : 'user-av'}`;
+            av.textContent = role === 'propa' ? '🏠' : 'ME';
+            row.appendChild(av);
+
+            if (role === 'propa' && props && props.length > 0) {
+                const wrap = document.createElement('div');
+                wrap.style.cssText = 'max-width:90%; display:flex; flex-direction:column; gap:8px;';
+                if (text) {
+                    const b = document.createElement('div');
+                    b.className = 'msg-bub propa';
+                    b.textContent = text;
+                    wrap.appendChild(b);
+                }
+                props.forEach(p => wrap.appendChild(buildCard(p)));
+                row.appendChild(wrap);
+            } else {
+                const bub = document.createElement('div');
+                bub.className = `msg-bub ${role === 'propa' ? 'propa' : 'user'}`;
+                bub.textContent = text;
+                row.appendChild(bub);
+            }
+
+            msgs.appendChild(row);
+            scroll();
+        }
+
+        function buildCard(p) {
+            const card = document.createElement('div');
+            card.className = 'prop-card';
+
+            const img = document.createElement('div');
+            img.className = 'prop-img';
+            if (p.images?.[0]) {
+                const i = document.createElement('img');
+                i.src = p.images[0];
+                i.alt = p.title;
+                i.onerror = () => { img.innerHTML = '🏠'; };
+                img.appendChild(i);
+            } else img.textContent = '🏠';
+            card.appendChild(img);
+
+            const body = document.createElement('div');
+            body.className = 'prop-body';
+            body.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <span class="prop-price">${p.price_label || '₦—'}</span>
+        ${p.verified ? '<span class="prop-verified">✓ Verified</span>' : ''}
+      </div>
+      <div class="prop-title">${p.title}</div>
+      <div class="prop-meta">
+        <span>🛏 ${p.bedrooms || '?'}</span>
+        <span>📍 ${p.neighborhood || p.city || ''}</span>
+      </div>
+    `;
+            card.appendChild(body);
+            return card;
+        }
+
+        function showTyping() {
+            const msgs = document.getElementById('chatMsgs');
+            const row = document.createElement('div');
+            row.id = 'typingRow';
+            row.className = 'typing-row';
+            const av = document.createElement('div');
+            av.className = 'msg-av propa'; av.textContent = '🏠';
+            const dots = document.createElement('div');
+            dots.className = 'typing-dots';
+            dots.innerHTML = '<div class="t-dot"></div><div class="t-dot"></div><div class="t-dot"></div>';
+            row.appendChild(av); row.appendChild(dots);
+            msgs.appendChild(row);
+            scroll();
+        }
+        function removeTyping() { document.getElementById('typingRow')?.remove(); }
+
+        async function send() {
+            if (loading) return;
+            const inp = document.getElementById('chatInput');
+            const msg = inp.value.trim();
+            if (!msg) return;
+
+            inp.value = ''; inp.style.height = 'auto';
+            addMsg('user', msg);
+
+            const btn = document.getElementById('sendBtn');
+            btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none';
+            loading = true;
+            showTyping();
+
+            try {
+                const resp = await fetch(`${API}/api/agent/chat`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg, session_id: sessionId })
+                });
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                const data = await resp.json();
+                sessionId = data.session_id;
+                removeTyping();
+                addMsg('propa', data.reply || '...', data.properties_found || []);
+                // Post to Framer parent
+                try { window.parent.postMessage({ type: 'propa-reply', data }, '*'); } catch { }
+            } catch (e) {
+                removeTyping();
+                addMsg('propa', `Could not connect to API. Please try again. (${e.message})`);
+            } finally {
+                loading = false;
+                btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
+            }
+        }
+    </script>
+</body>
+
+</html>
