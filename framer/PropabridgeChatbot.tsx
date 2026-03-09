@@ -24,7 +24,7 @@ export default function PropabridgeChatbot() {
     const messagesEndRef = useRef<HTMLDivElement | null>(null)
 
     const API_URL =
-        "https://propabridge-api-480235407496.us-central1.run.app/api/agent/chat"
+        "http://localhost:8080/api/agent/chat"
 
     useEffect(() => {
         setMounted(true)
