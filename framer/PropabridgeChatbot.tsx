@@ -4,6 +4,7 @@ import { createPortal } from "react-dom"
 type Message = {
     role: "user" | "bot"
     content: string
+    properties?: any[]
 }
 
 export default function PropabridgeChatbot() {
@@ -51,7 +52,8 @@ export default function PropabridgeChatbot() {
                 requestBody.session_id = sessionId
             }
 
-            const res = await fetch(API_URL, {
+            // Notice we use /stream here
+            const res = await fetch(`${API_URL}/stream`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -61,30 +63,92 @@ export default function PropabridgeChatbot() {
 
             if (!res.ok) throw new Error("API error")
 
-            const data = await res.json()
+            // Add an empty bot message that we will progressively update
+            setMessages((prev) => [...prev, { role: "bot", content: "" }])
+            setIsLoading(false) // Not "loading" anymore, we're streaming
 
-            if (data.session_id) {
-                setSessionId(data.session_id)
+            const reader = res.body?.getReader()
+            if (!reader) throw new Error("No reader")
+            const decoder = new TextDecoder()
+            let accumulatedText = ""
+
+            while (true) {
+                const { done, value } = await reader.read()
+                if (done) break
+
+                const chunk = decoder.decode(value)
+                const lines = chunk.split('\n')
+                
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6))
+                            
+                            if (data.type === 'session_id') {
+                                setSessionId(data.session_id)
+                            } else if (data.type === 'chunk') {
+                                accumulatedText += data.text
+
+                                // Regex to clean up the backend JSON stream when it returns extra fields
+                                let displayText = accumulatedText
+                                let cleanText = accumulatedText.replace(/^```json\s*/i, '')
+                                
+                                const replyMatch = cleanText.match(/"reply"\s*:\s*"([\s\S]*)/)
+                                
+                                if (replyMatch) {
+                                    let extracted = replyMatch[1]
+                                    
+                                    // Strip off anything after the end of the reply string
+                                    extracted = extracted.replace(/",\s*"(?:actions|data_extracted|properties_to_show|properties_found|session_stage)"[\s\S]*/, '')
+                                    // Also strip if it's the very end of the JSON object
+                                    extracted = extracted.replace(/"\s*}$/, '')
+                                    
+                                    // Handle line breaks and quotes 
+                                    extracted = extracted.replace(/\\n/g, '\n').replace(/\\"/g, '"')
+                                    displayText = extracted
+                                } else if (cleanText.includes('"reply"')) {
+                                    displayText = ''
+                                } else if (cleanText.trim().startsWith('{')) {
+                                    displayText = '...'
+                                }
+                                
+                                setMessages((prev) => {
+                                    const newMsgs = [...prev]
+                                    newMsgs[newMsgs.length - 1].content = displayText
+                                    return newMsgs
+                                })
+                            } else if (data.type === 'final') {
+                                if (data.properties_found && data.properties_found.length > 0) {
+                                     setMessages((prev) => {
+                                         const newMsgs = [...prev]
+                                         newMsgs[newMsgs.length - 1].properties = data.properties_found
+                                         return newMsgs
+                                     })
+                                }
+                            } else if (data.type === 'error') {
+                                setMessages((prev) => {
+                                    const newMsgs = [...prev]
+                                    newMsgs[newMsgs.length - 1].content = `Sorry, I encountered an error: ${data.error}`
+                                    return newMsgs
+                                })
+                            }
+                        } catch (e) {
+                            // ignore json parse errors for incomplete lines
+                        }
+                    }
+                }
             }
-
-            const reply =
-                data.reply ||
-                data.response ||
-                data.message ||
-                "I'm having trouble responding right now."
-
-            setMessages((prev) => [...prev, { role: "bot", content: reply }])
         } catch (err) {
             console.error(err)
-
-            setMessages((prev) => [
-                ...prev,
-                {
-                    role: "bot",
-                    content:
-                        "Sorry, I encountered an error while trying to respond.",
-                },
-            ])
+            setMessages((prev) => {
+                const newMsgs = [...prev]
+                if (newMsgs[newMsgs.length - 1].role === "user") {
+                    newMsgs.push({ role: "bot", content: "Sorry, I encountered an error while trying to respond." })
+                } else {
+                    newMsgs[newMsgs.length - 1].content = "Sorry, I encountered an error while trying to respond."
+                }
+                return newMsgs
+            })
         } finally {
             setIsLoading(false)
         }
@@ -261,9 +325,72 @@ export default function PropabridgeChatbot() {
                                 maxWidth: "85%",
                                 fontSize: 13,
                                 lineHeight: 1.5,
+                                whiteSpace: "pre-wrap",
                             }}
                         >
-                            {msg.content}
+                            {/* Parse simple markdown (bold and italic) */}
+                            <span dangerouslySetInnerHTML={{
+                                __html: msg.content
+                                    .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+                                    .replace(/\*(.*?)\*/g, "<em>$1</em>")
+                            }} />
+
+                            {/* Property Cards Rendering */}
+                            {msg.properties && msg.properties.length > 0 && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+                                    {msg.properties.map((prop: any, idx: number) => (
+                                        <div
+                                            key={idx}
+                                            style={{
+                                                background: '#fff',
+                                                border: '1px solid #e8eaed',
+                                                borderRadius: 10,
+                                                overflow: 'hidden',
+                                                cursor: 'pointer',
+                                                color: '#1a2336',
+                                                boxShadow: '0 1px 3px rgba(0,0,0,0.06)'
+                                            }}
+                                        >
+                                            <div style={{
+                                                height: 100,
+                                                background: '#f4f5f7',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: 24,
+                                                color: '#9aa3b2',
+                                                position: 'relative',
+                                                overflow: 'hidden'
+                                            }}>
+                                                {prop.images && prop.images[0] ? (
+                                                    <img src={prop.images[0]} alt={prop.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                ) : (
+                                                    '🏠'
+                                                )}
+                                            </div>
+                                            <div style={{ padding: 10 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#0a1628' }}>{prop.price_label || '₦—'}</span>
+                                                    {prop.verified && (
+                                                        <span style={{
+                                                            background: '#e8f0fe', color: '#1a73e8', borderRadius: 100, padding: '2px 8px', fontSize: 10, fontWeight: 600
+                                                        }}>
+                                                            ✓ Verified
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {prop.title}
+                                                </div>
+                                                <div style={{ display: 'flex', gap: 10, fontSize: 11, color: '#6b7280' }}>
+                                                    <span>🛏 {prop.bedrooms || '?'}</span>
+                                                    <span>📍 {prop.neighborhood || prop.city || ''}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     ))}
 
