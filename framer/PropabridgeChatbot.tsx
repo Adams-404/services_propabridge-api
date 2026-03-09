@@ -18,6 +18,7 @@ export default function PropabridgeChatbot() {
     const [input, setInput] = useState("")
     const [isLoading, setIsLoading] = useState(false)
     const [sessionId, setSessionId] = useState<string | null>(null)
+    const [isListening, setIsListening] = useState(false)
 
     const [mounted, setMounted] = useState(false)
     const messagesEndRef = useRef<HTMLDivElement | null>(null)
@@ -89,14 +90,54 @@ export default function PropabridgeChatbot() {
         }
     }
 
+    const handleVoiceClick = () => {
+        const SpeechRecognition =
+            (window as any).SpeechRecognition ||
+            (window as any).webkitSpeechRecognition
+
+        if (!SpeechRecognition) {
+            alert("Sorry, your browser doesn't support speech recognition.")
+            return
+        }
+
+        const recognition = new SpeechRecognition()
+        recognition.continuous = false
+        recognition.interimResults = false
+        recognition.lang = "en-US"
+
+        recognition.onstart = () => {
+            setIsListening(true)
+        }
+
+        recognition.onresult = (event: any) => {
+            const transcript = event.results[0][0].transcript
+            setInput((prev) => (prev ? `${prev} ${transcript}` : transcript))
+        }
+
+        recognition.onerror = (event: any) => {
+            console.error("Speech recognition error", event.error)
+            setIsListening(false)
+        }
+
+        recognition.onend = () => {
+            setIsListening(false)
+        }
+
+        // If it's already listening, we don't start it again. 
+        // The user can stop speaking and it automatically ends.
+        if (!isListening) {
+            recognition.start()
+        }
+    }
+
     if (!mounted || typeof document === "undefined") return null
 
     return createPortal(
         <div
             style={{
                 position: "fixed",
-                top: -3, // MATCHED VERTICAL Y-POSITION OF HEADER IN SCREENSHOT!
-                right: 24, // Keeps it away from the right edge
+                top: 23, // NUDGED DOWN: Moved from 24 to 28 so it vertically centers with the header
+                right: 24,
                 zIndex: 999999,
                 fontFamily: "Inter, sans-serif",
                 display: "flex",
@@ -111,9 +152,9 @@ export default function PropabridgeChatbot() {
                     background: "#FFFFF2",
                     color: "#081A33",
                     border: "none",
-                    borderRadius: "12px", 
-                    padding: "0 24px", // Switched from top/bottom padding to side padding only
-                    height: 104, // EXACT SAME UP-AND-DOWN SIZE AS YOUR HEADER
+                    borderRadius: "12px", // PERFECT MATCH: Same curves as the main header
+                    height: 54,
+                    padding: "12px 18px",
                     fontSize: 14,
                     fontWeight: 700,
                     cursor: "pointer",
@@ -124,20 +165,20 @@ export default function PropabridgeChatbot() {
                     gap: "8px",
                 }}
             >
-                {isOpen ? "Close Chat ✕" : "Chat Propa"}
+                {isOpen ? "Close Chat ✕" : "Chat  Propa"}
             </button>
 
             {/* Chat Window */}
             <div
                 style={{
                     position: "absolute",
-                    top: 116, // Pushed the chat window opening point down to account for the taller 104px button
+                    top: 60,
                     right: 0,
                     width: 340,
                     height: 500,
                     background: "rgba(255,255,255,0.95)",
                     backdropFilter: "blur(20px)",
-                    borderRadius: 12,
+                    borderRadius: 12, // (I left the chat window nicely curved so it's friendly, but only the button is 5px)
                     boxShadow: "0 24px 80px rgba(0,0,0,0.3)",
                     display: "flex",
                     flexDirection: "column",
@@ -165,7 +206,15 @@ export default function PropabridgeChatbot() {
                         color: "#081A33",
                     }}
                 >
-                    Propabridge AI
+                    <div style={{ display: "flex", flexDirection: "column" }}>
+                        <span>Propabridge AI</span>
+                        {/* Session ID display! Visually subtle. */}
+                        {sessionId && (
+                            <span style={{ fontSize: 10, color: "#888", fontWeight: 400, marginTop: 2 }}>
+                                Session: {sessionId}
+                            </span>
+                        )}
+                    </div>
                     <button
                         onClick={() => setIsOpen(false)}
                         style={{
@@ -229,6 +278,19 @@ export default function PropabridgeChatbot() {
                             Propabridge AI is typing...
                         </div>
                     )}
+                    
+                    {/* Visual feedback when the mic is active */}
+                    {isListening && !isLoading && (
+                        <div
+                            style={{
+                                fontSize: 12,
+                                color: "#ff4444",
+                                paddingLeft: 4,
+                            }}
+                        >
+                            Listening for voice...
+                        </div>
+                    )}
 
                     <div ref={messagesEndRef} />
                 </div>
@@ -241,8 +303,32 @@ export default function PropabridgeChatbot() {
                         display: "flex",
                         gap: 8,
                         backgroundColor: "#fff",
+                        alignItems: "center"
                     }}
                 >
+                    {/* Microphone button for Voice-to-Text */}
+                    <button
+                        onClick={handleVoiceClick}
+                        title="Voice Input"
+                        style={{
+                            background: isListening ? "#ffebeb" : "#f0f2f5",
+                            color: isListening ? "#ff4444" : "#081A33",
+                            border: "none",
+                            borderRadius: "50%",
+                            width: 32,
+                            height: 32,
+                            minWidth: 32,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            cursor: "pointer",
+                            transition: "all 0.2s ease",
+                            fontSize: 16
+                        }}
+                    >
+                        🎤
+                    </button>
+
                     <input
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
@@ -277,6 +363,7 @@ export default function PropabridgeChatbot() {
                             padding: "0 18px",
                             cursor: "pointer",
                             fontWeight: 600,
+                            height: 38,
                             opacity: !input.trim() ? 0.6 : 1,
                         }}
                     >
