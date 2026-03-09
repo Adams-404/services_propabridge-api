@@ -101,7 +101,7 @@ Response (reply + properties + lead status + session)
 | `GOOGLE_CLOUD_PROJECT` | Your GCP project ID |
 | `GOOGLE_APPLICATION_CREDENTIALS` | Path to service account JSON |
 | `VERTEX_AI_LOCATION` | Usually `us-central1` |
-| `GEMINI_MODEL` | `gemini-1.5-pro-preview-0409` |
+| `GEMINI_MODEL` | `gemini-2.5-flash` |
 | `TWILIO_ACCOUNT_SID` | From Twilio console |
 | `TWILIO_AUTH_TOKEN` | From Twilio console |
 | `TWILIO_WHATSAPP_NUMBER` | `whatsapp:+14155238886` (sandbox) |
@@ -130,19 +130,35 @@ This creates 15 realistic Abuja property listings with:
 
 ## Connecting to Framer
 
-In your Framer chatbot widget, use:
-```javascript
-const API_BASE = 'https://api.propabridge.com'; // or http://localhost:8080 for dev
+You have two environments for the Chatbot widget:
 
-const response = await fetch(`${API_BASE}/api/agent/chat`, {
+**1. Live Production**
+Point your API base to the live Cloud Run URL:
+```javascript
+const API_BASE = 'https://propabridge-api-480235407496.us-central1.run.app';
+```
+
+**2. Local Development (The Offline Framer Test Environment)**
+If you are developing locally and modifying the component code before pasting it into Framer, you can test it locally without touching the `public/` folder.
+
+1. Ensure your backend is running (`npm start` in the main folder) on `http://localhost:8080`.
+2. Open a new terminal tab and navigate into the framer folder:
+   ```bash
+   cd framer
+   npm run dev
+   ```
+3. Open `http://localhost:5173` in your browser.
+4. Temporarily change the `API_URL` variable inside `framer/PropabridgeChatbot.tsx` to `http://localhost:8080`.
+5. When you are done testing, change the `API_URL` back to the live production URL, copy the entire file content, and paste it into Framer!
+
+```javascript
+// Example streaming connection code used in the component
+const response = await fetch(`${API_BASE}/api/agent/chat/stream`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({ message: userInput, session_id: sessionId })
 });
-const data = await response.json();
-// data.session_id — save this in React state
-// data.reply — show as agent message
-// data.properties_found — show as property cards
+// (See framer/PropabridgeChatbot.tsx for the full stream decoding logic)
 ```
 
 ---
