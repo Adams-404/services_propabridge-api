@@ -380,6 +380,174 @@ router.post('/chat', async (req, res) => {
 
 /**
  * @swagger
+ * /api/agent/chat/stream:
+ *   post:
+ *     tags: [🤖 Agent]
+ *     summary: Stream real-time responses from Propa (word-by-word)
+ *     description: |
+ *       Streaming chat endpoint that returns responses in real-time as they're generated.
+ *       Uses Server-Sent Events (SSE) for instant word-by-word delivery.
+ *       Much faster perceived response time for users.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/ChatMessage'
+ *     responses:
+ *       200:
+ *         description: Streaming response (Server-Sent Events)
+ *         content:
+ *           text/event-stream:
+ *             schema:
+ *               type: string
+ */
+router.post('/chat/stream', async (req, res) => {
+  try {
+    const { message, session_id } = req.body;
+
+    if (!message?.trim()) {
+      return res.status(400).json({ error: 'Message is required' });
+    }
+
+    // Set SSE headers
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Headers': 'Cache-Control'
+    });
+
+    // ── 1. Get or create session ──
+    const sessionId = session_id || `sess_${uuidv4().slice(0, 12)}`;
+    let session = await getSession(sessionId).catch(() => null);
+    if (!session) {
+      session = await createSession(sessionId).catch(() => ({
+        session_id: sessionId, history: [], lead: null, stage: 'greeting',
+        message_count: 0, properties_shown: [],
+      }));
+    }
+
+    // ── 2. Save user message ──
+    await addMessageToSession(sessionId, 'user', message).catch(() => {
+      session.history = [...(session.history || []), { role: 'user', text: message }];
+    });
+
+    // Send session ID first
+    res.write(`data: ${JSON.stringify({ type: 'session_id', session_id: sessionId })}\n\n`);
+
+    // ── 3. Stream Gemini response ──
+    let finalResponse = null;
+    let accumulatedText = '';
+
+    try {
+      for await (const chunk of gemini.chatStream({
+        message,
+        history: session.history || [],
+        sessionId,
+        sessionData: session,
+      })) {
+        if (chunk.type === 'chunk') {
+          accumulatedText += chunk.text;
+          res.write(`data: ${JSON.stringify({ 
+            type: 'chunk', 
+            text: chunk.text,
+            accumulated: accumulatedText 
+          })}\n\n`);
+        } else if (chunk.type === 'complete') {
+          finalResponse = chunk;
+          res.write(`data: ${JSON.stringify({ 
+            type: 'complete',
+            reply: chunk.reply,
+            actions: chunk.actions,
+            dataExtracted: chunk.dataExtracted,
+            propertiesToShow: chunk.propertiesToShow,
+            sessionStage: chunk.sessionStage
+          })}\n\n`);
+          break;
+        }
+      }
+    } catch (err) {
+      console.error('[Stream Error]', err);
+      res.write(`data: ${JSON.stringify({ 
+        type: 'error', 
+        error: 'AI response failed' 
+      })}\n\n`);
+    }
+
+    // ── 4. Process actions if we have a complete response ──
+    if (finalResponse) {
+      try {
+        const fullHistory = [...(session.history || []),
+        { role: 'user', text: message },
+        { role: 'model', text: finalResponse.reply }];
+
+        const dataExtracted = finalResponse.dataExtracted || {};
+        const actions = await inferActions(finalResponse, session, dataExtracted);
+        const { results: actionResults, propertiesFound } = await dispatchActions({
+          actions,
+          dataExtracted,
+          session,
+          sessionId,
+          propertiesToShow: finalResponse.propertiesToShow,
+        });
+
+        // Save the complete response
+        await addMessageToSession(sessionId, 'model', finalResponse.reply).catch(() => { });
+        await updateSession(sessionId, {
+          stage: finalResponse.sessionStage || session.stage,
+        }).catch(() => { });
+
+        // Send final results
+        res.write(`data: ${JSON.stringify({ 
+          type: 'final',
+          properties_found: propertiesFound.slice(0, 4).map(p => ({
+            id: p.id,
+            title: p.title,
+            price_label: p.price_label,
+            bedrooms: p.bedrooms,
+            neighborhood: p.neighborhood,
+            image: p.images?.[0] || null,
+            verified: p.verified,
+            type: p.type,
+            features: p.features?.slice(0, 4),
+          })),
+          lead_captured: !!actionResults.leadCaptured,
+          whatsapp_sent: !!actionResults.whatsappSent,
+          viewing_booked: !!actionResults.appointmentBooked,
+          appointment_id: actionResults.appointmentId || null,
+          action_taken: actionResults.appointmentBooked ? 'viewing_booked'
+            : actionResults.leadCaptured ? 'lead_captured'
+              : propertiesFound.length > 0 ? 'properties_shown'
+                : 'none',
+        })}\n\n`);
+      } catch (err) {
+        console.error('[Action Processing Error]', err);
+        res.write(`data: ${JSON.stringify({ 
+          type: 'action_error', 
+          error: 'Action processing failed' 
+        })}\n\n`);
+      }
+    }
+
+    // Close the stream
+    res.write(`data: ${JSON.stringify({ type: 'done' })}\n\n`);
+    res.end();
+
+  } catch (err) {
+    console.error('[Stream Setup Error]', err);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Stream setup failed',
+        details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+      });
+    }
+  }
+});
+
+/**
+ * @swagger
  * /api/agent/session/{session_id}:
  *   get:
  *     tags: [🤖 Agent]

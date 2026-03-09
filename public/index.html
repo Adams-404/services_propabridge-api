@@ -100,7 +100,6 @@
       gap: 32px;
       margin-bottom: 40px;
     }
-    .brand-stat { }
     .brand-stat-num {
       font-size: 28px;
       font-weight: 700;
@@ -670,11 +669,12 @@
     sendMessage();
   }
 
-  function addMessage(role, text, properties) {
+  function addMessage(role, text, properties, isStreaming = false) {
     hideChips();
     const msgs = document.getElementById('chatMessages');
     const row = document.createElement('div');
     row.className = `msg-row ${role}`;
+    row.id = isStreaming ? `streaming-${Date.now()}` : undefined;
 
     if (role === 'propa') {
       const avatar = document.createElement('div');
@@ -690,6 +690,9 @@
 
     const bubble = document.createElement('div');
     bubble.className = `msg-bubble ${role === 'propa' ? 'propa' : 'user'}`;
+    if (isStreaming) {
+      bubble.classList.add('streaming');
+    }
 
     // Handle property cards
     if (role === 'propa' && properties && properties.length > 0) {
@@ -811,28 +814,88 @@
     showTyping();
 
     try {
-      const resp = await fetch(`${API_BASE()}/api/agent/chat`, {
+      // Use streaming endpoint for real-time responses
+      const resp = await fetch(`${API_BASE()}/api/agent/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: msg, session_id: sessionId }),
       });
 
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
 
-      sessionId = data.session_id;
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let currentMessageId = null;
+      let accumulatedText = '';
+
+      // Handle streaming response
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              
+              switch (data.type) {
+                case 'session_id':
+                  sessionId = data.session_id;
+                  updateSessionInfo();
+                  break;
+                  
+                case 'chunk':
+                  accumulatedText += data.text;
+                  
+                  // Create or update message in real-time
+                  if (!currentMessageId) {
+                    removeTyping();
+                    currentMessageId = addMessage('propa', '', [], true); // true = streaming mode
+                  }
+                  updateStreamingMessage(currentMessageId, accumulatedText);
+                  break;
+                  
+                case 'complete':
+                  // Final message received
+                  if (currentMessageId) {
+                    finalizeStreamingMessage(currentMessageId, data.reply);
+                  }
+                  break;
+                  
+                case 'final':
+                  // Show properties and actions
+                  const properties = data.properties_found || [];
+                  if (currentMessageId) {
+                    addPropertiesToMessage(currentMessageId, properties);
+                  }
+                  
+                  // Show action feedback
+                  if (data.lead_captured) showNotice('✅ Your details have been saved!', 'success');
+                  if (data.viewing_booked) showNotice('📅 Viewing appointment booked!', 'success');
+                  if (data.whatsapp_sent) showNotice('📱 WhatsApp confirmation sent', 'info');
+                  break;
+                  
+                case 'error':
+                  removeTyping();
+                  addMessage('propa', `Sorry, I encountered an error: ${data.error}`);
+                  break;
+                  
+                case 'done':
+                  // Stream complete
+                  break;
+              }
+            } catch (e) {
+              console.error('Error parsing SSE data:', e);
+            }
+          }
+        }
+      }
+
       msgCount++;
       updateSessionInfo();
-      removeTyping();
-
-      const reply = data.reply || 'No response received.';
-      const properties = data.properties_found || [];
-      addMessage('propa', reply, properties);
-
-      // Show action feedback
-      if (data.lead_captured) showNotice('✅ Your details have been saved!', 'success');
-      if (data.viewing_booked) showNotice('📅 Viewing appointment booked!', 'success');
-      if (data.whatsapp_sent) showNotice('📱 WhatsApp confirmation sent', 'info');
 
     } catch (err) {
       removeTyping();
@@ -882,6 +945,69 @@
         <button class="chip" onclick="sendChip(this)">Studio flat under ₦800K</button>
       </div>
     `;
+  }
+
+  // ─── Streaming Helper Functions ─────────────────────────────────────
+  function updateStreamingMessage(messageId, text) {
+    const messageElement = document.getElementById(messageId);
+    if (!messageElement) return;
+    
+    const bubble = messageElement.querySelector('.msg-bubble');
+    const textContent = bubble.querySelector('.msg-text') || bubble.querySelector('.propa-text');
+    
+    if (textContent) {
+      textContent.textContent = text;
+    } else {
+      // Create text content if it doesn't exist
+      const textDiv = document.createElement('div');
+      textDiv.className = 'msg-text';
+      textDiv.textContent = text;
+      bubble.appendChild(textDiv);
+    }
+    
+    scrollToBottom();
+  }
+
+  function finalizeStreamingMessage(messageId, finalText) {
+    const messageElement = document.getElementById(messageId);
+    if (!messageElement) return;
+    
+    const bubble = messageElement.querySelector('.msg-bubble');
+    bubble.classList.remove('streaming');
+    
+    updateStreamingMessage(messageId, finalText);
+  }
+
+  function addPropertiesToMessage(messageId, properties) {
+    const messageElement = document.getElementById(messageId);
+    if (!messageElement || !properties || properties.length === 0) return;
+    
+    const bubble = messageElement.querySelector('.msg-bubble');
+    
+    // Create properties container
+    const propsContainer = document.createElement('div');
+    propsContainer.className = 'property-cards';
+    
+    properties.forEach(prop => {
+      const card = document.createElement('div');
+      card.className = 'property-card';
+      card.innerHTML = `
+        <img src="${prop.image || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=400'}" alt="${prop.title}" />
+        <div class="property-info">
+          <div class="property-title">${prop.title}</div>
+          <div class="property-price">${prop.price_label}</div>
+          <div class="property-meta">
+            <span>🛏 ${prop.bedrooms} bed</span>
+            <span>📍 ${prop.neighborhood}</span>
+            ${prop.verified ? '<span class="verified">✓ Verified</span>' : ''}
+          </div>
+        </div>
+      `;
+      propsContainer.appendChild(card);
+    });
+    
+    bubble.appendChild(propsContainer);
+    scrollToBottom();
   }
 
   // Spin animation for loading

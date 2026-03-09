@@ -19,12 +19,12 @@ if (!API_KEY) {
 }
 
 const genAI = new GoogleGenerativeAI(API_KEY || 'MISSING_KEY');
-const MODEL = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite-preview';
+const MODEL = process.env.GEMINI_MODEL || 'gemini-1.5-flash';
 
 function getModel(temp = 0.7) {
   return genAI.getGenerativeModel({
     model: MODEL,
-    generationConfig: { maxOutputTokens: 2048, temperature: temp },
+    generationConfig: { maxOutputTokens: 1024, temperature: temp },
   });
 }
 
@@ -54,7 +54,7 @@ async function chat({ message, history = [], sessionId, sessionData = {} }) {
     .replace('{{SESSION_ID}}', sessionId);
 
   // Build conversation history for the Gemini chat API
-  const chatHistory = history.slice(-20).map(h => ({
+  const chatHistory = history.slice(-10).map(h => ({
     role: h.role === 'model' ? 'model' : 'user',
     parts: [{ text: h.text }],
   }));
@@ -64,7 +64,12 @@ async function chat({ message, history = [], sessionId, sessionData = {} }) {
     systemInstruction: { parts: [{ text: systemPrompt }] },
   });
 
-  const result = await chatSession.sendMessage(message);
+  const result = await Promise.race([
+    chatSession.sendMessage(message),
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('AI response timeout')), 15000)
+    )
+  ]);
   const rawReply = result.response.text();
 
   // Try to parse structured JSON response
@@ -89,6 +94,62 @@ async function chat({ message, history = [], sessionId, sessionData = {} }) {
     propertiesToShow: [],
     sessionStage: 'discovery',
     raw: rawReply,
+  };
+}
+
+// ─── Streaming Chat — Real-time word-by-word responses ───────────────────────
+async function* chatStream({ message, history = [], sessionId, sessionData = {} }) {
+  const model = getModel(0.75);
+
+  const systemPrompt = MAIN_SYSTEM_PROMPT
+    .replace('{{CURRENT_DATE}}', new Date().toLocaleDateString('en-NG', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    }))
+    .replace('{{SESSION_ID}}', sessionId);
+
+  const chatHistory = history.slice(-10).map(h => ({
+    role: h.role === 'model' ? 'model' : 'user',
+    parts: [{ text: h.text }],
+  }));
+
+  const chatSession = model.startChat({
+    history: chatHistory,
+    systemInstruction: { parts: [{ text: systemPrompt }] },
+  });
+
+  const result = await Promise.race([
+    chatSession.sendMessageStream(message),
+    new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('AI response timeout')), 15000)
+    )
+  ]);
+
+  let accumulatedText = '';
+  
+  for await (const chunk of result.stream) {
+    const chunkText = chunk.text();
+    accumulatedText += chunkText;
+    
+    // Send the chunk as it comes
+    yield {
+      type: 'chunk',
+      text: chunkText,
+      accumulated: accumulatedText
+    };
+  }
+
+  // Try to parse the final accumulated response
+  const parsed = parseJSON(accumulatedText);
+  
+  // Send final structured data
+  yield {
+    type: 'complete',
+    reply: parsed?.reply || accumulatedText,
+    actions: parsed?.actions || [],
+    dataExtracted: parsed?.data_extracted || {},
+    propertiesToShow: parsed?.properties_to_show || [],
+    sessionStage: parsed?.session_stage || 'discovery',
+    raw: accumulatedText,
   };
 }
 
@@ -153,4 +214,4 @@ async function generateFollowUp({ name, intent, location, budget, propertiesShow
   return result.response.text().trim();
 }
 
-module.exports = { chat, extractLeadData, parseSearchQuery, summarizeConversation, generateFollowUp };
+module.exports = { chat, chatStream, extractLeadData, parseSearchQuery, summarizeConversation, generateFollowUp };
