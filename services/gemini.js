@@ -66,7 +66,7 @@ async function chat({ message, history = [], sessionId, sessionData = {} }) {
 
   const result = await Promise.race([
     chatSession.sendMessage(message),
-    new Promise((_, reject) => 
+    new Promise((_, reject) =>
       setTimeout(() => reject(new Error('AI response timeout')), 15000)
     )
   ]);
@@ -119,17 +119,17 @@ async function* chatStream({ message, history = [], sessionId, sessionData = {} 
 
   const result = await Promise.race([
     chatSession.sendMessageStream(message),
-    new Promise((_, reject) => 
+    new Promise((_, reject) =>
       setTimeout(() => reject(new Error('AI response timeout')), 15000)
     )
   ]);
 
   let accumulatedText = '';
-  
+
   for await (const chunk of result.stream) {
     const chunkText = chunk.text();
     accumulatedText += chunkText;
-    
+
     // Send the chunk as it comes
     yield {
       type: 'chunk',
@@ -140,7 +140,7 @@ async function* chatStream({ message, history = [], sessionId, sessionData = {} 
 
   // Try to parse the final accumulated response
   const parsed = parseJSON(accumulatedText);
-  
+
   // Send final structured data
   yield {
     type: 'complete',

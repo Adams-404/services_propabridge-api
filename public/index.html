@@ -576,7 +576,7 @@
     <!-- API bar -->
     <div class="api-bar">
       <label>🔌 API</label>
-      <input type="text" id="apiUrl" value="https://propabridge-api-480235407496.us-central1.run.app" placeholder="https://your-api.run.app" />
+      <input type="text" id="apiUrl" value="http://localhost:8080" placeholder="http://localhost:8080" />
     </div>
 
     <!-- Session info -->
@@ -674,7 +674,10 @@
     const msgs = document.getElementById('chatMessages');
     const row = document.createElement('div');
     row.className = `msg-row ${role}`;
-    row.id = isStreaming ? `streaming-${Date.now()}` : undefined;
+    
+    // Assign a unique ID so we can update it later
+    const newId = isStreaming ? `streaming-${Date.now()}` : `msg-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+    row.id = newId;
 
     if (role === 'propa') {
       const avatar = document.createElement('div');
@@ -720,6 +723,8 @@
     row.appendChild(bubble);
     msgs.appendChild(row);
     scrollToBottom();
+    
+    return row.id;
   }
 
   function buildPropCard(p) {
@@ -855,7 +860,33 @@
                     removeTyping();
                     currentMessageId = addMessage('propa', '', [], true); // true = streaming mode
                   }
-                  updateStreamingMessage(currentMessageId, accumulatedText);
+
+                  // The AI streams raw JSON like: { "reply": "Hi...", "actions": [] }
+                  // We extract just the text inside the "reply" string to display cleanly
+                  let displayText = accumulatedText;
+                  
+                  // Ignore markdown JSON blocks if present
+                  let cleanText = accumulatedText.replace(/^```json\s*/i, '');
+                  
+                  const replyMatch = cleanText.match(/"reply"\s*:\s*"([^]*)/);
+                  if (replyMatch) {
+                    let extracted = replyMatch[1];
+                    // Strip off anything after the end of the reply string
+                    extracted = extracted.replace(/",\s*"(actions|data_extracted|properties_to_show|session_stage)".*/, '');
+                    // For the very end of the string if it's perfectly completed without trailing fields
+                    extracted = extracted.replace(/"\s*}$/, '');
+                    // Handle line breaks and quotes
+                    extracted = extracted.replace(/\\n/g, '<br>').replace(/\\"/g, '"');
+                    displayText = extracted;
+                  } else if (cleanText.includes('"reply"')) {
+                     // In case it's just starting to type the reply key
+                     displayText = '';
+                  } else if (cleanText.trim().startsWith('{')) {
+                     // It's generating the beginning of the JSON but hasn't reached "reply" yet
+                     displayText = '...';
+                  }
+
+                  updateStreamingMessage(currentMessageId, displayText);
                   break;
                   
                 case 'complete':
@@ -956,12 +987,12 @@
     const textContent = bubble.querySelector('.msg-text') || bubble.querySelector('.propa-text');
     
     if (textContent) {
-      textContent.textContent = text;
+      textContent.innerHTML = text; // Changed to innerHTML to support <br> from \n
     } else {
       // Create text content if it doesn't exist
       const textDiv = document.createElement('div');
       textDiv.className = 'msg-text';
-      textDiv.textContent = text;
+      textDiv.innerHTML = text; // Changed to innerHTML
       bubble.appendChild(textDiv);
     }
     

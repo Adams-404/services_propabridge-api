@@ -278,7 +278,7 @@ export default function PropabridgeChatbot() {
                             Propabridge AI is typing...
                         </div>
                     )}
-                    
+
                     {/* Visual feedback when the mic is active */}
                     {isListening && !isLoading && (
                         <div
