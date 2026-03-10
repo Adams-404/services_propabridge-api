@@ -173,31 +173,123 @@ async function updateLead(leadId, updates) {
   }
 }
 
-// ─── Properties ───────────────────────────────────────────────────────────────
+// ─── PostreSQL Initialization ───────────────────────────────────────────────────
+const { Pool } = require('pg');
+let pgPool = null;
+
+function getPgPool() {
+  if (pgPool) return pgPool;
+  if (!process.env.DB_HOST) {
+      console.warn('⚠️ PostgreSQL credentials not configured, falling back to empty properties list');
+      return null;
+  }
+  
+  pgPool = new Pool({
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    ssl: { rejectUnauthorized: false }
+  });
+  return pgPool;
+}
+
+// ─── Properties (PostgreSQL) ──────────────────────────────────────────────────
 
 async function getProperties(filters = {}) {
-  const firestore = getDB();
-  if (!firestore) throw new Error('Firestore not available — using sample data');
+  const pool = getPgPool();
+  if (!pool) return []; // Fallback empty if pg is not available
+  
+  let queryStr = 'SELECT * FROM properties WHERE 1=1';
+  const queryParams = [];
+  let paramCount = 1;
 
-  let q = firestore.collection('properties').where('verified', '==', true);
-  if (filters.type) q = q.where('type', '==', filters.type);
-  if (filters.bedrooms) q = q.where('bedrooms', '==', parseInt(filters.bedrooms));
-  if (filters.neighborhood) q = q.where('neighborhood', '==', filters.neighborhood);
-  q = q.limit(filters.limit || 20);
-  const snap = await q.get();
-  let results = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (filters.type) {
+    let typeVal = filters.type;
+    if (typeVal === 'buy') typeVal = 'sale';
+    queryStr += ` AND listing_type = $${paramCount}`;
+    queryParams.push(typeVal);
+    paramCount++;
+  }
+  
+  if (filters.bedrooms) {
+    queryStr += ` AND bedrooms = $${paramCount}`;
+    queryParams.push(parseInt(filters.bedrooms));
+    paramCount++;
+  }
+  
+  if (filters.neighborhood) {
+    queryStr += ` AND (area ILIKE $${paramCount} OR city ILIKE $${paramCount} OR title ILIKE $${paramCount})`;
+    queryParams.push(`%${filters.neighborhood}%`);
+    paramCount++;
+  }
+  
+  if (filters.maxPrice) {
+      queryStr += ` AND price <= $${paramCount}`;
+      queryParams.push(filters.maxPrice);
+      paramCount++;
+  }
+  
+  if (filters.minPrice) {
+      queryStr += ` AND price >= $${paramCount}`;
+      queryParams.push(filters.minPrice);
+      paramCount++;
+  }
 
-  if (filters.maxPrice) results = results.filter(p => p.price <= filters.maxPrice);
-  if (filters.minPrice) results = results.filter(p => p.price >= filters.minPrice);
+  queryStr += ` LIMIT $${paramCount}`;
+  queryParams.push(filters.limit || 20);
 
-  return results;
+  try {
+      const result = await pool.query(queryStr, queryParams);
+      // Map postgres props to old structure
+      return result.rows.map(row => ({
+          id: row.id,
+          title: row.title,
+          price: row.price,
+          price_label: `₦${Number(row.price).toLocaleString()}`, // assuming local formatting
+          neighborhood: row.area,
+          city: row.city,
+          bedrooms: row.bedrooms,
+          bathrooms: row.bathrooms,
+          type: row.listing_type,
+          verified: true, // Hardcoded for now
+          images: row.cover_image_url ? [row.cover_image_url] : [],
+          features: [] // you can populate features from DB if applicable
+      }));
+  } catch (err) {
+      console.error('Error fetching properties from PG:', err);
+      return [];
+  }
 }
 
 async function getProperty(id) {
-  const firestore = getDB();
-  if (!firestore) throw new Error('Firestore not available');
-  const doc = await firestore.collection('properties').doc(id).get();
-  return doc.exists ? { id: doc.id, ...doc.data() } : null;
+  const pool = getPgPool();
+  if (!pool) return null;
+  
+  try {
+      const result = await pool.query('SELECT * FROM properties WHERE id = $1', [id]);
+      if (result.rows.length === 0) return null;
+      
+      const row = result.rows[0];
+      return {
+          id: row.id,
+          title: row.title,
+          price: row.price,
+          price_label: `₦${Number(row.price).toLocaleString()}`, // assuming local formatting
+          neighborhood: row.area,
+          city: row.city,
+          bedrooms: row.bedrooms,
+          bathrooms: row.bathrooms,
+          type: row.listing_type,
+          verified: true, // Hardcoded for now
+          images: row.cover_image_url ? [row.cover_image_url] : [],
+          features: []
+      };
+  } catch (err) {
+      console.error('Error fetching property from PG:', err);
+      return null;
+  }
 }
 
 // ─── Appointments ─────────────────────────────────────────────────────────────

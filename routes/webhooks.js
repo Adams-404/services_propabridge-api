@@ -9,7 +9,7 @@
 const router = require('express').Router();
 const { chat } = require('../services/gemini');
 const { sendWhatsApp, formatNigerianPhone } = require('../services/twilio');
-const { getSession, createSession, addMessageToSession, updateSession } = require('../services/firestore');
+const { getSession, createSession, addMessageToSession, updateSession } = require('../services/db');
 
 // In-memory rate limiting (per phone number)
 const lastMessage = new Map(); // phone -> timestamp

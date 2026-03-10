@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { saveLead, getLeads, updateLead } = require('../services/firestore');
+const { saveLead, getLeads, updateLead } = require('../services/db');
 const { sendWhatsApp, templates } = require('../services/twilio');
 
 /**

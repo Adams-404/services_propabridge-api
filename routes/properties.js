@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { getProperties, getProperty } = require('../services/firestore');
+const { getProperties, getProperty } = require('../services/db');
 const { SAMPLE_PROPERTIES } = require('../data/seed');
 
 async function fetchProperties(filters = {}) {

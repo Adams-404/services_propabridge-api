@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { getSession, getDB } = require('../services/firestore');
+const { getSession, getDB } = require('../services/db');
 
 /**
  * @swagger

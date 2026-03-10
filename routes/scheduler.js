@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { createViewingEvent, cancelViewingEvent, getAvailableSlots } = require('../services/calendar');
-const { saveAppointment, getAppointments } = require('../services/firestore');
+const { saveAppointment, getAppointments } = require('../services/db');
 const { sendWhatsApp, templates } = require('../services/twilio');
 const { SAMPLE_PROPERTIES } = require('../data/seed');
 

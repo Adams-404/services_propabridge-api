@@ -11,7 +11,7 @@ const { createViewingEvent } = require('../services/calendar');
 const {
   createSession, getSession, updateSession, addMessageToSession,
   saveLead, updateLead, getProperties, saveAppointment,
-} = require('../services/firestore');
+} = require('../services/db');
 const { SAMPLE_PROPERTIES } = require('../data/seed');
 
 // ─── Fallback DB (uses sample data if Firestore is not available) ──────────────

@@ -70,30 +70,36 @@ export default function PropabridgeChatbot() {
             const reader = res.body?.getReader()
             if (!reader) throw new Error("No reader")
             const decoder = new TextDecoder()
-            let accumulatedText = ""
+            let sseBuffer = ""
 
             while (true) {
                 const { done, value } = await reader.read()
                 if (done) break
 
-                const chunk = decoder.decode(value)
-                const lines = chunk.split('\n')
+                sseBuffer += decoder.decode(value, { stream: true })
                 
-                for (const line of lines) {
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6))
-                            
-                            if (data.type === 'session_id') {
-                                setSessionId(data.session_id)
-                            } else if (data.type === 'chunk') {
-                                accumulatedText += data.text
+                const messagesStream = sseBuffer.split('\n\n')
+                sseBuffer = messagesStream.pop() || ""
 
-                                // Regex to clean up the backend JSON stream when it returns extra fields
-                                let displayText = accumulatedText
-                                let cleanText = accumulatedText.replace(/^```json\s*/i, '')
+                for (const msgStr of messagesStream) {
+                    const lines = msgStr.split('\n')
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const dataStr = line.slice(6)
+                            if (dataStr === '[DONE]') continue
+                            try {
+                                const data = JSON.parse(dataStr)
                                 
-                                const replyMatch = cleanText.match(/"reply"\s*:\s*"([\s\S]*)/)
+                                if (data.type === 'session_id') {
+                                    setSessionId(data.session_id)
+                                } else if (data.type === 'chunk') {
+                                    const accumulatedText = data.accumulated || ""
+
+                                    // Regex to clean up the backend JSON stream when it returns extra fields
+                                    let displayText = accumulatedText
+                                    let cleanText = accumulatedText.replace(/^```json\s*/i, '')
+                                    
+                                    const replyMatch = cleanText.match(/"reply"\s*:\s*"([^]*)/)
                                 
                                 if (replyMatch) {
                                     let extracted = replyMatch[1]
@@ -137,6 +143,7 @@ export default function PropabridgeChatbot() {
                         }
                     }
                 }
+            }
             }
         } catch (err) {
             console.error(err)
@@ -362,8 +369,8 @@ export default function PropabridgeChatbot() {
                                                 position: 'relative',
                                                 overflow: 'hidden'
                                             }}>
-                                                {prop.images && prop.images[0] ? (
-                                                    <img src={prop.images[0]} alt={prop.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                {prop.image ? (
+                                                    <img src={prop.image} alt={prop.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                 ) : (
                                                     '🏠'
                                                 )}

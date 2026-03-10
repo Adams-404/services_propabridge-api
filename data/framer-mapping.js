@@ -237,7 +237,7 @@ const NIGERIA_NEIGHBORHOODS_TO_ADD = [
  *    - Property categories mapped to Nigerian types
  *    - Amenities use slugs from your Framer Amenities collection
  *
- * 2. services/firestore.js  →  getProperties() filters
+ * 2. services/db.js  →  getProperties() filters
  *    - type filter: query "property_status" not "type"
  *    - bedrooms filter: query "beds" not "bedrooms"  
  *    - neighborhood filter: query "neighborhood" (same)

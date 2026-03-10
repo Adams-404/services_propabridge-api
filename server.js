@@ -231,7 +231,7 @@ app.use('/api/db', require('./routes/database'));
 
 // ─── Health Check (for Docker + Cloud Run) ───────────────────────────────────
 app.get('/health', (req, res) => {
-  const { getStorageMode } = require('./services/firestore');
+  const { getStorageMode } = require('./services/db');
   res.json({
     status: 'healthy',
     uptime: Math.floor(process.uptime()),
@@ -242,7 +242,7 @@ app.get('/health', (req, res) => {
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 app.get('/', (req, res) => {
-  const { getStorageMode } = require('./services/firestore');
+  const { getStorageMode } = require('./services/db');
   res.json({
     name: '🏠 Propabridge Multi-AI Agent API',
     version: '1.0.0',
@@ -275,7 +275,7 @@ app.use((err, req, res, next) => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  const { getStorageMode } = require('./services/firestore');
+  const { getStorageMode } = require('./services/db');
   console.log(`\n🏠 Propabridge API running on port ${PORT}`);
   console.log(`📖 Swagger UI: http://localhost:${PORT}/docs`);
   console.log(`🔌 API Base:   http://localhost:${PORT}/api`);
