@@ -77,7 +77,7 @@ export default function PropabridgeChatbot() {
                 if (done) break
 
                 sseBuffer += decoder.decode(value, { stream: true })
-                
+
                 const messagesStream = sseBuffer.split('\n\n')
                 sseBuffer = messagesStream.pop() || ""
 
@@ -89,7 +89,7 @@ export default function PropabridgeChatbot() {
                             if (dataStr === '[DONE]') continue
                             try {
                                 const data = JSON.parse(dataStr)
-                                
+
                                 if (data.type === 'session_id') {
                                     setSessionId(data.session_id)
                                 } else if (data.type === 'chunk') {
@@ -98,52 +98,52 @@ export default function PropabridgeChatbot() {
                                     // Regex to clean up the backend JSON stream when it returns extra fields
                                     let displayText = accumulatedText
                                     let cleanText = accumulatedText.replace(/^```json\s*/i, '')
-                                    
+
                                     const replyMatch = cleanText.match(/"reply"\s*:\s*"([^]*)/)
-                                
-                                if (replyMatch) {
-                                    let extracted = replyMatch[1]
-                                    
-                                    // Strip off anything after the end of the reply string
-                                    extracted = extracted.replace(/",\s*"(?:actions|data_extracted|properties_to_show|properties_found|session_stage)"[\s\S]*/, '')
-                                    // Also strip if it's the very end of the JSON object
-                                    extracted = extracted.replace(/"\s*}$/, '')
-                                    
-                                    // Handle line breaks and quotes 
-                                    extracted = extracted.replace(/\\n/g, '\n').replace(/\\"/g, '"')
-                                    displayText = extracted
-                                } else if (cleanText.includes('"reply"')) {
-                                    displayText = ''
-                                } else if (cleanText.trim().startsWith('{')) {
-                                    displayText = '...'
+
+                                    if (replyMatch) {
+                                        let extracted = replyMatch[1]
+
+                                        // Strip off anything after the end of the reply string
+                                        extracted = extracted.replace(/",\s*"(?:actions|data_extracted|properties_to_show|properties_found|session_stage)"[\s\S]*/, '')
+                                        // Also strip if it's the very end of the JSON object
+                                        extracted = extracted.replace(/"\s*}$/, '')
+
+                                        // Handle line breaks and quotes 
+                                        extracted = extracted.replace(/\\n/g, '\n').replace(/\\"/g, '"')
+                                        displayText = extracted
+                                    } else if (cleanText.includes('"reply"')) {
+                                        displayText = ''
+                                    } else if (cleanText.trim().startsWith('{')) {
+                                        displayText = '...'
+                                    }
+
+                                    setMessages((prev) => {
+                                        const newMsgs = [...prev]
+                                        newMsgs[newMsgs.length - 1].content = displayText
+                                        return newMsgs
+                                    })
+                                } else if (data.type === 'final') {
+                                    if (data.properties_found && data.properties_found.length > 0) {
+                                        setMessages((prev) => {
+                                            const newMsgs = [...prev]
+                                            newMsgs[newMsgs.length - 1].properties = data.properties_found
+                                            return newMsgs
+                                        })
+                                    }
+                                } else if (data.type === 'error') {
+                                    setMessages((prev) => {
+                                        const newMsgs = [...prev]
+                                        newMsgs[newMsgs.length - 1].content = `Sorry, I encountered an error: ${data.error}`
+                                        return newMsgs
+                                    })
                                 }
-                                
-                                setMessages((prev) => {
-                                    const newMsgs = [...prev]
-                                    newMsgs[newMsgs.length - 1].content = displayText
-                                    return newMsgs
-                                })
-                            } else if (data.type === 'final') {
-                                if (data.properties_found && data.properties_found.length > 0) {
-                                     setMessages((prev) => {
-                                         const newMsgs = [...prev]
-                                         newMsgs[newMsgs.length - 1].properties = data.properties_found
-                                         return newMsgs
-                                     })
-                                }
-                            } else if (data.type === 'error') {
-                                setMessages((prev) => {
-                                    const newMsgs = [...prev]
-                                    newMsgs[newMsgs.length - 1].content = `Sorry, I encountered an error: ${data.error}`
-                                    return newMsgs
-                                })
+                            } catch (e) {
+                                // ignore json parse errors for incomplete lines
                             }
-                        } catch (e) {
-                            // ignore json parse errors for incomplete lines
                         }
                     }
                 }
-            }
             }
         } catch (err) {
             console.error(err)
@@ -409,7 +409,7 @@ export default function PropabridgeChatbot() {
                                 paddingLeft: 4,
                             }}
                         >
-                            Propabridge AI is typing...
+                            Propa is typing...
                         </div>
                     )}
 
